@@ -1,24 +1,40 @@
-from sentence_transformers import SentenceTransformer
-from typing import List
-from env_loader import env_loader
+"""
+Модуль для генерации эмбеддингов текста.
+Использует SentenceTransformers или другой выбранный метод.
+"""
 
-class EmbeddingGenerator:
+from env_loader import get_env
+from error_handler import log_error
+
+EMBED_DIM = int(get_env("EMBED_DIM", 384))
+
+class EmbeddingsGenerator:
+    """
+    Класс для генерации эмбеддингов текста.
+    """
+
     def __init__(self):
-        embed_dim = env_loader.get_int('EMBED_DIM', 384)
+        try:
+            from sentence_transformers import SentenceTransformer
+            # Выбор модели по размеру эмбеддинга
+            if EMBED_DIM == 384:
+                self.model = SentenceTransformer('all-MiniLM-L6-v2')
+            else:
+                self.model = SentenceTransformer('all-mpnet-base-v2')
+        except Exception as e:
+            log_error(e, "EmbeddingsGenerator.__init__")
+            self.model = None
 
-        if embed_dim == 768:
-            model_name = 'sentence-transformers/all-mpnet-base-v2'
-        else:
-            model_name = 'sentence-transformers/all-MiniLM-L6-v2'
+    def get_embedding(self, text: str):
+        """
+        Получает эмбеддинг для текста.
+        """
+        if not self.model or not text.strip():
+            return []
+        try:
+            return self.model.encode(text)
+        except Exception as e:
+            log_error(e, "EmbeddingsGenerator.get_embedding")
+            return []
 
-        self.model = SentenceTransformer(model_name)
-
-    def generate(self, text: str) -> List[float]:
-        embedding = self.model.encode(text)
-        return embedding.tolist()
-
-    def generate_batch(self, texts: List[str]) -> List[List[float]]:
-        embeddings = self.model.encode(texts)
-        return [emb.tolist() for emb in embeddings]
-
-embedding_generator = EmbeddingGenerator()
+embeddings = EmbeddingsGenerator()

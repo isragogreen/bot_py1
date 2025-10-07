@@ -12,6 +12,7 @@ from main_workflow import MainWorkflow
 from chat_monitor import ChatMonitor
 from proactive_workflow import ProactiveWorkflow
 from logger import logger, LogLevel
+from env_loader import get_env
 
 class BotSystem:
     """
@@ -112,8 +113,9 @@ class BotSystem:
         # Получение списка моделей
         models = self.db.get_free_llms()
         if models:
+            role_temp = float(get_env(f"{role}_temp", 0.5))
             # Генерация проактивного сообщения
-            response = await llm.call_llm(models[0][0], prompt, 0.5)
+            response = await llm.call_llm(models[0][0], prompt, role_temp)
 
             if response and self.chat_monitor:
                 # Отправка через Telegram

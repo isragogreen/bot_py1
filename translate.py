@@ -1,51 +1,46 @@
-import aiohttp
-from env_loader import env_loader
+"""
+Модуль для перевода текста.
+Использует внешний API, если доступен, иначе fallback на локальный перевод (заглушка).
+"""
+
+from env_loader import get_env
+from error_handler import log_error
+import requests
+
+TRANSLATE_API_KEY = get_env("TRANSLATE_API_KEY")
+TRANSLATE_TIMEOUT = int(get_env("TRANSLATE_TIMEOUT", 10))
 
 class Translator:
+    """
+    Класс для перевода текста на английский.
+    """
+
     def __init__(self):
-        self.api_key = env_loader.get('TRANSLATE_API_KEY')
-        self.enabled = bool(self.api_key)
+        self.api_key = TRANSLATE_API_KEY
 
-    async def translate_to_english(self, text: str) -> str:
-        if not self.enabled:
+    def translate_to_english(self, text: str) -> str:
+        """
+        Переводит текст на английский язык.
+        """
+        if not text.strip():
+            return ""
+        if not self.api_key:
+            # Fallback: возвращаем исходный текст (или используем локальный переводчик)
             return text
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    'https://translation.googleapis.com/language/translate/v2',
-                    params={'key': self.api_key},
-                    json={
-                        'q': text,
-                        'target': 'en',
-                        'format': 'text'
-                    }
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data['data']['translations'][0]['translatedText']
+            # Пример для Google Translate API (замените на ваш API)
+            url = "https://translation.googleapis.com/language/translate/v2"
+            params = {
+                "q": text,
+                "target": "en",
+                "key": self.api_key
+            }
+            resp = requests.post(url, data=params, timeout=TRANSLATE_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["data"]["translations"][0]["translatedText"]
         except Exception as e:
-            print(f"Translation error: {e}")
-
-        return text
-
-    async def detect_language(self, text: str) -> str:
-        if not self.enabled:
-            return 'unknown'
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    'https://translation.googleapis.com/language/translate/v2/detect',
-                    params={'key': self.api_key},
-                    json={'q': text}
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data['data']['detections'][0][0]['language']
-        except Exception as e:
-            print(f"Language detection error: {e}")
-
-        return 'unknown'
+            log_error(e, "Translator.translate_to_english")
+            return text
 
 translator = Translator()

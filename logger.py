@@ -6,6 +6,7 @@
 from enum import IntEnum
 from datetime import datetime
 from typing import Optional, Callable
+import logging
 
 class LogLevel(IntEnum):
     """Уровни логирования"""
@@ -77,3 +78,34 @@ class Logger:
 
 # Глобальный экземпляр логгера
 logger = Logger(LogLevel.DEBUG)
+
+"""
+Модуль для логирования событий системы.
+"""
+
+import logging
+from enum import Enum
+
+class LogLevel(Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+logging.basicConfig(
+    filename="bot_system.log",
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s"
+)
+
+def logger(msg: str, context: str = "", level: LogLevel = LogLevel.INFO):
+    """
+    Логирует сообщение с уровнем и контекстом.
+    """
+    full_msg = f"[{context}] {msg}"
+    if level == LogLevel.INFO:
+        logging.info(full_msg)
+    elif level == LogLevel.WARNING:
+        logging.warning(full_msg)
+    elif level == LogLevel.ERROR:
+        logging.error(full_msg)
+    print(full_msg)

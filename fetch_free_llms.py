@@ -1,39 +1,41 @@
-import aiohttp
-from typing import List, Tuple
-from env_loader import env_loader
+"""
+Модуль для получения списка бесплатных LLM моделей через OpenRouter API.
+"""
 
-async def fetch_free_llms(only_free: bool = True) -> List[Tuple[str, str]]:
-    api_key = env_loader.get('OPENROUTER_API_KEY')
-    if not api_key:
-        default_llms = env_loader.get_list('FREE_LLMS_DEFAULT')
-        return [(llm, llm) for llm in default_llms]
+import requests
+from env_loader import get_env
+from error_handler import log_error
 
+OPENROUTER_API_KEY = get_env("OPENROUTER_API_KEY")
+FREE_LLMS_DEFAULT = get_env("FREE_LLMS_DEFAULT", "")
+
+def fetch_free_llms(only_free: bool = True):
+    """
+    Получает список моделей LLM.
+    Если only_free=True, фильтрует только бесплатные модели.
+    Если нет ключа API, возвращает дефолтный список из .env.
+    """
+    models = []
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                'https://openrouter.ai/api/v1/models',
-                headers={'Authorization': f'Bearer {api_key}'}
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    models = []
+        if not OPENROUTER_API_KEY:
+            # Нет ключа — используем дефолтный список
+            for idx, name in enumerate(FREE_LLMS_DEFAULT.split(',')):
+                models.append((idx, name.strip()))
+            return models
 
-                    for model in data.get('data', []):
-                        model_id = model.get('id', '')
-                        pricing = model.get('pricing', {})
-
-                        if only_free:
-                            prompt_cost = float(pricing.get('prompt', '0'))
-                            completion_cost = float(pricing.get('completion', '0'))
-
-                            if prompt_cost == 0 and completion_cost == 0:
-                                models.append((model_id, model.get('name', model_id)))
-                        else:
-                            models.append((model_id, model.get('name', model_id)))
-
-                    return models if models else [(llm, llm) for llm in env_loader.get_list('FREE_LLMS_DEFAULT')]
+        url = "https://openrouter.ai/api/v1/models"
+        headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        for idx, model in enumerate(data.get("models", [])):
+            if only_free and model.get("pricing", {}).get("unit_price", 1) > 0:
+                continue
+            models.append((idx, model["id"]))
+        return models
     except Exception as e:
-        print(f"Error fetching models: {e}")
-
-    default_llms = env_loader.get_list('FREE_LLMS_DEFAULT')
-    return [(llm, llm) for llm in default_llms]
+        log_error(e, "fetch_free_llms")
+        # В случае ошибки — возвращаем дефолтный список
+        for idx, name in enumerate(FREE_LLMS_DEFAULT.split(',')):
+            models.append((idx, name.strip()))
+        return models

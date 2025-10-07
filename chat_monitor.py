@@ -1,60 +1,52 @@
+"""
+Модуль для приема и отправки сообщений через Telegram.
+Асинхронная интеграция с основной очередью сообщений.
+"""
+
 import asyncio
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
-from typing import Callable, Optional
-from env_loader import env_loader
+from env_loader import get_env
+from error_handler import log_error
+from main_workflow import MainWorkflow
+
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils import executor
+
+TELEGRAM_BOT_TOKEN = get_env("TELEGRAM_BOT_TOKEN")
 
 class ChatMonitor:
-    def __init__(self, on_message: Callable):
-        self.token = env_loader.get('TELEGRAM_BOT_TOKEN')
-        self.enabled = bool(self.token)
-        self.on_message = on_message
-        self.app: Optional[Application] = None
+    """
+    Класс для асинхронного мониторинга Telegram-чата.
+    Получает входящие сообщения и передает их в основной workflow.
+    """
+
+    def __init__(self, workflow: MainWorkflow):
+        self.workflow = workflow
         self.running = False
-
-    async def message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.message and update.message.text:
-            nick = update.effective_user.username or str(update.effective_user.id)
-            text = update.message.text
-
-            await self.on_message(nick, text)
-
-    async def send_message(self, chat_id: str, text: str):
-        if self.app and self.running:
-            try:
-                await self.app.bot.send_message(chat_id=chat_id, text=text)
-            except Exception as e:
-                print(f"Error sending message: {e}")
+        self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        self.dp = Dispatcher(self.bot)
 
     async def start(self):
-        if not self.enabled or self.running:
-            return
-
+        """
+        Запуск мониторинга Telegram.
+        """
+        self.running = True
         try:
-            self.app = Application.builder().token(self.token).build()
+            @self.dp.message_handler()
+            async def handle_message(message: types.Message):
+                nick = message.from_user.username or str(message.from_user.id)
+                text = message.text
+                await self.workflow.handle_incoming_message(nick, text)
 
-            self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.message_handler))
-
-            await self.app.initialize()
-            await self.app.start()
-            await self.app.updater.start_polling()
-
-            self.running = True
-            print("Telegram bot started")
-
+            # Запуск aiogram event loop
+            await self.dp.start_polling()
         except Exception as e:
-            print(f"Error starting Telegram bot: {e}")
-            self.enabled = False
+            log_error(e, "ChatMonitor")
 
     async def stop(self):
-        if self.app and self.running:
-            try:
-                await self.app.updater.stop()
-                await self.app.stop()
-                await self.app.shutdown()
-                self.running = False
-                print("Telegram bot stopped")
-            except Exception as e:
-                print(f"Error stopping Telegram bot: {e}")
-
-chat_monitor: Optional[ChatMonitor] = None
+        """
+        Остановка мониторинга.
+        """
+        self.running = False
+        await self.dp.storage.close()
+        await self.dp.storage.wait_closed()
+        await self.bot.session.close()

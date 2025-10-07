@@ -1,57 +1,57 @@
-import asyncio
+"""
+Модуль для работы проактивных агентов (AGITATOR).
+Отправляет сообщения при длительной неактивности пользователя.
+"""
+
+import time
 import random
-from datetime import datetime, timedelta
-from typing import Optional
-from db import Database
-from env_loader import env_loader
+from env_loader import get_env
+from error_handler import log_error
+from logger import logger
+
+INACTIVITY_N = int(get_env("INACTIVITY_N", 10))
+RANDOM_MULTIPLIER_MIN = int(get_env("RANDOM_MULTIPLIER_MIN", 1))
+RANDOM_MULTIPLIER_MAX = int(get_env("RANDOM_MULTIPLIER_MAX", 5))
 
 class ProactiveWorkflow:
-    def __init__(self, db: Database, send_message_callback):
-        self.db = db
-        self.send_message = send_message_callback
-        self.inactivity_n = env_loader.get_int('INACTIVITY_N', 10)
-        self.random_min = env_loader.get_int('RANDOM_MULTIPLIER_MIN', 1)
-        self.random_max = env_loader.get_int('RANDOM_MULTIPLIER_MAX', 5)
-        self.enabled = False
-        self.task: Optional[asyncio.Task] = None
+    """
+    Класс для управления проактивными агентами.
+    """
 
-    async def check_inactivity(self):
-        while self.enabled:
-            try:
-                last_message_time = self.db.get_setting('last_message_time')
+    def __init__(self, main_workflow, llm_subworkflow):
+        self.main_workflow = main_workflow
+        self.llm_subworkflow = llm_subworkflow
+        self.active = True
+        self.last_activity = time.time()
+        self.next_trigger = self._calc_next_trigger()
 
-                if last_message_time:
-                    elapsed = datetime.now().timestamp() - last_message_time
-                    multiplier = random.randint(self.random_min, self.random_max)
-                    threshold = self.inactivity_n * multiplier * 60
+    def _calc_next_trigger(self):
+        multiplier = random.randint(RANDOM_MULTIPLIER_MIN, RANDOM_MULTIPLIER_MAX)
+        return self.last_activity + INACTIVITY_N * multiplier
 
-                    if elapsed > threshold:
-                        operator_nick = env_loader.get('OPERATOR_NICK', 'admin_operator')
+    def update_activity(self):
+        """Обновить время последней активности и пересчитать триггер."""
+        self.last_activity = time.time()
+        self.next_trigger = self._calc_next_trigger()
 
-                        await self.send_message('AGITATOR', operator_nick)
-
-                        self.db.set_setting('last_message_time', datetime.now().timestamp())
-                        self.db.add_history('system', f'Proactive message sent after {elapsed/60:.1f} min', 'system_log')
-
-                await asyncio.sleep(60)
-
-            except Exception as e:
-                print(f"Proactive workflow error: {e}")
-                await asyncio.sleep(60)
-
-    def start(self):
-        if not self.enabled and not self.task:
-            self.enabled = True
-            self.task = asyncio.create_task(self.check_inactivity())
-            print("Proactive workflow started")
-
-    async def stop(self):
-        if self.task:
-            self.enabled = False
-            self.task.cancel()
-            try:
-                await self.task
-            except asyncio.CancelledError:
-                pass
-            self.task = None
-            print("Proactive workflow stopped")
+    def check_inactivity(self):
+        """
+        Проверяет неактивность и отправляет сообщение от AGITATOR через LLM.
+        """
+        try:
+            if not self.active:
+                return
+            now = time.time()
+            if now > self.next_trigger:
+                prompt = "Пользователь давно не проявлял активности. Сгенерируй провокационное сообщение для чата."
+                best_model = self.llm_subworkflow.get_best_model("AGITATOR")
+                if best_model:
+                    msg = self.llm_subworkflow.generate_response("AGITATOR", prompt)
+                else:
+                    msg = "В чате давно не было активности. AGITATOR отправляет сообщение!"
+                logger.info(msg, "PROACTIVE")
+                self.main_workflow.process_message("AGITATOR", msg)
+                self.last_activity = now
+                self.next_trigger = self._calc_next_trigger()
+        except Exception as e:
+            log_error(e, "ProactiveWorkflow.check_inactivity")

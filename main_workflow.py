@@ -16,6 +16,28 @@ from doc_processing import DocProcessing
 from proactive_workflow import ProactiveWorkflow
 from fetch_free_llms import fetch_free_llms
 from logger import logger, LogLevel
+from error_handler import log_error
+
+class BotController:
+    """
+    Управление состоянием бота: полная остановка, остановка обработки сообщений.
+    """
+    def __init__(self):
+        self.running = True
+        self.processing = True
+
+    def stop_all(self):
+        """Полная остановка всех процессов."""
+        self.running = False
+        self.processing = False
+
+    def stop_processing(self):
+        """Остановка обработки сообщений и proactive."""
+        self.processing = False
+
+    def start_processing(self):
+        """Возобновление обработки сообщений."""
+        self.processing = True
 
 class MainWorkflow:
     """
@@ -369,6 +391,7 @@ Respond in the same language as the original user message. Be helpful and friend
 
         except Exception as e:
             logger.error(f"Error processing message from {nick}: {e}", "PROCESS")
+            log_error(e, "MainWorkflow")
 
     async def handle_incoming_message(self, nick: str, text: str):
         """
