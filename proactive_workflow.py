@@ -26,8 +26,9 @@ class ProactiveWorkflow:
         self.next_trigger = self._calc_next_trigger()
 
     def _calc_next_trigger(self):
-        multiplier = random.randint(RANDOM_MULTIPLIER_MIN, RANDOM_MULTIPLIER_MAX)
-        return self.last_activity + INACTIVITY_N * multiplier
+        multiplier = random.randint(INACTIVITY_N * RANDOM_MULTIPLIER_MIN, 
+                                    INACTIVITY_N * RANDOM_MULTIPLIER_MAX)
+        return self.last_activity + multiplier
 
     def update_activity(self):
         """Обновить время последней активности и пересчитать триггер."""

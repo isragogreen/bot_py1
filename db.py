@@ -44,12 +44,13 @@ class Database:
             "settings": "CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT);",
             "free_llms": "CREATE TABLE IF NOT EXISTS free_llms (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, is_active INTEGER DEFAULT 1);",
             "queue": "CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY, nick TEXT, text TEXT, ts REAL);",
-            "history": "CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY, nick TEXT, text TEXT, ts REAL, role TEXT);",
+            "history": "CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY, nick TEXT, text TEXT, ts REAL, role TEXT, author TEXT, is_bot INTEGER);",
             "llm_name": "CREATE TABLE IF NOT EXISTS llm_name (nick TEXT PRIMARY KEY, llm TEXT);",
             "model_scores": "CREATE TABLE IF NOT EXISTS model_scores (nick TEXT, model TEXT, score REAL);",
             "blacklist": "CREATE TABLE IF NOT EXISTS blacklist (nick TEXT PRIMARY KEY);",
             "doc_state": "CREATE TABLE IF NOT EXISTS doc_state (repo TEXT PRIMARY KEY, commit_hash TEXT, updated_ts REAL);",
-            "iteration_counter": "CREATE TABLE IF NOT EXISTS iteration_counter (id INTEGER PRIMARY KEY, count INTEGER);"
+            "iteration_counter": "CREATE TABLE IF NOT EXISTS iteration_counter (id INTEGER PRIMARY KEY, count INTEGER);",
+            "llm_message_log": "CREATE TABLE IF NOT EXISTS llm_message_log (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT, role TEXT, created_dt TEXT, prompt TEXT, user_message TEXT, generated_text TEXT, model_response TEXT, score REAL, score_reason TEXT, llm_goal TEXT);"
         }
         for sql in tables_sql.values():
             cursor.execute(sql)
@@ -123,12 +124,18 @@ class Database:
             return count
 
     # --- Методы для истории сообщений ---
-    def add_history(self, nick: str, text: str, role: str = 'user'):
-        """Добавляет сообщение в историю."""
+    def add_history(self, nick: str, text: str, role: str = 'user', author: str = None, is_bot: int = 0):
+        """Добавляет сообщение в историю с датой, автором и признаком бота."""
         with self.lock:
             conn = self._get_connection()
-            conn.execute('INSERT INTO history (nick, text, ts, role) VALUES (?, ?, ?, ?)',
-                        (nick, text, datetime.now().timestamp(), role))
+            ts = datetime.now().timestamp()
+            dt = datetime.now().strftime("%d.%m.%y %H:%M:%S")
+            if author is None:
+                author = nick
+            conn.execute(
+                'INSERT INTO history (nick, text, ts, dt, role, author, is_bot) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (nick, text, ts, dt, role, author, is_bot)
+            )
             conn.commit()
             conn.close()
 
@@ -341,3 +348,32 @@ class Database:
             count = cursor.fetchone()[0]
             conn.close()
             return count
+
+    def add_llm_message_log(
+        self,
+        model: str,
+        role: str,
+        prompt: str,
+        user_message: str,
+        generated_text: str,
+        model_response: str,
+        score: float = None,
+        score_reason: str = None,
+        llm_goal: str = None
+    ):
+        """Добавляет запись в историю логирования сообщений LLM."""
+        with self.lock:
+            conn = self._get_connection()
+            created_dt = datetime.now().strftime("%d.%m.%y %H:%M:%S")
+            conn.execute(
+                '''INSERT INTO llm_message_log (
+                    model, role, created_dt, prompt, user_message, generated_text,
+                    model_response, score, score_reason, llm_goal
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (
+                    model, role, created_dt, prompt, user_message, generated_text,
+                    model_response, score, score_reason, llm_goal
+                )
+            )
+            conn.commit()
+            conn.close()
